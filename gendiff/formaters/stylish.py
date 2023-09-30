@@ -1,68 +1,94 @@
-from typing import Any
-
-DEFAULT_INDENT = 4
+import itertools
 
 
-def to_str(value: Any, depth: int) -> str:
-    if isinstance(value, dict):
-        lines = ['{']
-        for key, nested_value in value.items():
-            if isinstance(nested_value, dict):
-                new_value = to_str(nested_value, depth + DEFAULT_INDENT)
-                lines.append(f"{' ' * depth}    {key}: {new_value}")
+STATUS = 'status'
+ADDED = 'added'
+NESTED = 'nested'
+REMOVED = 'removed'
+UNCHANGED = 'unchanged'
+UPDATED = 'updated'
+VALUE = 'value'
+UPDATED_VALUE = 'updated_value'
+ERROR = 'Object has no STATUS'
+INDENT_STEP = 4
+
+
+def stylish_format(item, replacer=' ', add='+ ', remove='- '):  # noqa: C901
+
+    def iter_(current_item, depth):
+        if not isinstance(current_item, dict):
+            return str(current_item)
+
+        deep_indent_size = depth + INDENT_STEP
+        deep_indent = replacer * deep_indent_size
+        current_indent = replacer * depth
+
+        list_string = []
+        for key, val in current_item.items():
+            if val[STATUS] == REMOVED:
+                values = is_bool(val[VALUE])
+                list_string.append(
+                    f"{deep_indent[: - 2]}{remove}{key}: "
+                    f"{format_dic(values, replacer, deep_indent_size)}"
+                )
+            elif val[STATUS] == ADDED:
+                values = is_bool(val[VALUE])
+                list_string.append(
+                    f"{deep_indent[: - 2]}{add}{key}: "
+                    f"{format_dic(values, replacer, deep_indent_size)}"
+                )
+            elif val[STATUS] == UNCHANGED:
+                values = is_bool(val[VALUE])
+                list_string.append(
+                    f"{deep_indent}{key}: "
+                    f"{format_dic(values, replacer, deep_indent_size)}"
+                )
+            elif val[STATUS] == UPDATED:
+                value1 = is_bool(val[VALUE])
+                value2 = is_bool(val[UPDATED_VALUE])
+                list_string.append(
+                    f"{deep_indent[: - 2]}{remove}{key}: "
+                    f"{format_dic(value1, replacer, deep_indent_size)}"
+                )
+                list_string.append(
+                    f"{deep_indent[: -2]}{add}{key}: "
+                    f"{format_dic(value2, replacer, deep_indent_size)}")
+            elif val[STATUS] == NESTED:
+                list_string.append(
+                    f"{deep_indent}{key}: "
+                    f"{iter_(val[VALUE], deep_indent_size)}"
+                )
             else:
-                lines.append(f"{' ' * depth}    {key}: {nested_value}")
-        lines.append(f'{" " * depth}}}')
-        return '\n'.join(lines)
-    if isinstance(value, bool):
-        return str(value).lower()
-    if value is None:
+                raise ERROR
+        result = itertools.chain('{', list_string, [current_indent + '}'])
+        return '\n'.join(result)
+
+    return iter_(item, 0)
+
+
+def format_dic(item, replacer, depth=0):
+    if not isinstance(item, dict):
+        return str(item)
+    deep_indent_size = depth + INDENT_STEP
+    indent = replacer * deep_indent_size
+    current_indent = replacer * depth
+    list_string = []
+    for k, v in item.items():
+        if not isinstance(item, dict):
+            list_string.append(f'{indent}{k}: {v}')
+        else:
+            list_string.append(
+                f"{indent}{k}: "
+                f"{format_dic(v, replacer, deep_indent_size)}"
+            )
+    result = itertools.chain('{', list_string, [current_indent + '}'])
+    return '\n'. join(result)
+
+
+def is_bool(item):
+    if type(item) is bool:
+        return str(item).lower()
+    elif item is None:
         return 'null'
-    return value
-
-
-def line_forming(dictionary: dict, key: Any, depth: int, sign: str) -> str:
-    return f'{" " * depth}{sign}{dictionary["key"]}: ' \
-           f'{to_str(dictionary[key], depth + DEFAULT_INDENT)}'
-
-
-def build_stylish_iter(diff: dict, depth=0) -> str:
-    lines = ['{']
-    for dictionary in diff:
-        if dictionary['operation'] == 'same':
-            lines.append(line_forming(
-                dictionary, 'value',
-                depth, sign='    '
-            ))
-
-        if dictionary['operation'] == 'add':
-            lines.append(line_forming(
-                dictionary, 'new',
-                depth, sign='  + '
-            ))
-
-        if dictionary['operation'] == 'removed' or dictionary[
-                'operation'] == 'changed':
-            lines.append(line_forming(
-                dictionary, 'old',
-                depth, sign='  - '
-            ))
-
-        if dictionary['operation'] == 'changed':
-            lines.append(
-                line_forming(
-                    dictionary, 'new',
-                    depth, sign='  + '
-                ))
-
-        if dictionary['operation'] == 'nested':
-            new_value = build_stylish_iter(dictionary['value'],
-                                           depth + DEFAULT_INDENT)
-            lines.append(
-                f'{" " * depth}    {dictionary["key"]}: {new_value}')
-    lines.append(f'{" " * depth}}}')
-    return '\n'.join(lines)
-
-
-def render_stylish(diff: dict) -> str:
-    return build_stylish_iter(diff)
+    else:
+        return item
